@@ -1,0 +1,10 @@
+{
+  "name": "com.doyasu24.pagesystem",
+  "displayName": "PageSystem",
+  "author": { "name": "doyasu24", "url": "https://github.com/doyasu24" },
+  "version": "0.1.0",
+  "unity": "2022.3",
+  "description": "Provides a simple page navigation system for Unity uGUI using Addressables, VContainer, and UniTask, featuring push/pop stack transitions with customizable animations.",
+  "license": "MIT",
+  "dependencies": {}
+}
