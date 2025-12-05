@@ -5,7 +5,7 @@ provides a simple page navigation system for Unity uGUI using [Addressables](htt
 ## Requirements
 
 - Unity 2022.3 or later
-- [Addressables](https://docs.unity3d.com/Packages/com.unity.addressables@latest) (1.22+)
+- [Addressables](https://docs.unity3d.com/Packages/com.unity.addressables@latest) (1.22+ / 2.x)
 - [VContainer](https://github.com/hadashiA/VContainer) (1.16+)
 - [UniTask](https://github.com/Cysharp/UniTask) (2.5+)
 
