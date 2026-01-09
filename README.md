@@ -13,7 +13,7 @@ provides a simple page navigation system for Unity uGUI using [Addressables](htt
 
 Add to Package Manager:
 ```
-https://github.com/doyasu24/UnityPageSystem.git?path=Assets/Plugins/PageSystem#v0.1.0
+https://github.com/doyasu24/UnityPageSystem.git?path=Assets/Plugins/PageSystem#v0.1.1
 ```
 
 ## Architecture

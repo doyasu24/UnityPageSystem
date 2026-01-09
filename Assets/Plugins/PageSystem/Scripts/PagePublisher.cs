@@ -1,5 +1,7 @@
 using System;
+using System.Threading;
 using Cysharp.Threading.Tasks;
+using Cysharp.Threading.Tasks.Linq;
 using VContainer;
 
 namespace PageSystem
@@ -33,18 +35,24 @@ namespace PageSystem
     public class PagePublisher : IDisposable
     {
         private readonly Channel<PagePushMessage> _pushChannel;
+        private readonly ReadOnlyAsyncReactiveProperty<PagePushMessage> _pushMessage;
+        private readonly IDisposable _pushDisposable;
 
         /// <summary>
-        /// Gets the channel reader for push messages. Used internally by PageEntryPoint.
+        /// Gets the read-only reactive property for push messages.
         /// </summary>
-        public ChannelReader<PagePushMessage> PushChannel => _pushChannel.Reader;
+        public IReadOnlyAsyncReactiveProperty<PagePushMessage> PushMessage => _pushMessage;
 
         private readonly Channel<PagePopMessage> _popChannel;
+        private readonly ReadOnlyAsyncReactiveProperty<PagePopMessage> _popMessage;
+        private readonly IDisposable _popDisposable;
 
         /// <summary>
-        /// Gets the channel reader for pop messages. Used internally by PageEntryPoint.
+        /// Gets the read-only reactive property for pop messages.
         /// </summary>
-        public ChannelReader<PagePopMessage> PopChannel => _popChannel.Reader;
+        public IReadOnlyAsyncReactiveProperty<PagePopMessage> PopMessage => _popMessage;
+
+        private readonly CancellationTokenSource _cts = new();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PagePublisher"/> class.
@@ -53,7 +61,14 @@ namespace PageSystem
         public PagePublisher()
         {
             _pushChannel = Channel.CreateSingleConsumerUnbounded<PagePushMessage>();
+            var pushConnectable = _pushChannel.Reader.ReadAllAsync().Publish();
+            _pushMessage = pushConnectable.ToReadOnlyAsyncReactiveProperty(_cts.Token);
+            _pushDisposable = pushConnectable.Connect();
+
             _popChannel = Channel.CreateSingleConsumerUnbounded<PagePopMessage>();
+            var popConnectable = _popChannel.Reader.ReadAllAsync().Publish();
+            _popMessage = popConnectable.ToReadOnlyAsyncReactiveProperty(_cts.Token);
+            _popDisposable = popConnectable.Connect();
         }
 
         /// <summary>
@@ -137,6 +152,10 @@ namespace PageSystem
         {
             _pushChannel.Writer.TryComplete();
             _popChannel.Writer.TryComplete();
+            _cts.Cancel();
+            _cts.Dispose();
+            _pushDisposable.Dispose();
+            _popDisposable.Dispose();
         }
     }
 }
