@@ -22,6 +22,7 @@ https://github.com/doyasu24/UnityPageSystem.git?path=Assets/Plugins/PageSystem#v
 - Each page inherits from the `Page` base class
 - `PageContainer` manages page instantiation, destruction, and transition animations (pages are spawned as children)
 - `PagePublisher` provides Push/Pop operations for navigation
+- `IPageStackProvider` provides read-only access to the navigation stack
 
 ### Scene Hierarchy
 
@@ -84,7 +85,8 @@ public class PageLifetimeScope : LifetimeScope
     protected override void Configure(IContainerBuilder builder)
     {
         // Register PageSystem
-        builder.RegisterComponentInHierarchy<PageContainer>();
+        builder.RegisterComponentInHierarchy<PageContainer>()
+            .AsImplementedInterfaces();
         builder.RegisterPage();
 
         // Configure animations

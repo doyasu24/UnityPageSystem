@@ -24,7 +24,8 @@ namespace PageSystem
         /// <code>
         /// protected override void Configure(IContainerBuilder builder)
         /// {
-        ///     builder.RegisterComponentInHierarchy&lt;PageContainer&gt;();
+        ///     builder.RegisterComponentInHierarchy&lt;PageContainer&gt;()
+        ///         .AsImplementedInterfaces();
         ///     builder.RegisterPage();
         /// }
         /// </code>

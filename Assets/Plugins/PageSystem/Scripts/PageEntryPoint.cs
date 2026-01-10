@@ -66,7 +66,7 @@ namespace PageSystem
 
         private async UniTask PopAsync(PagePopMessage message, CancellationToken cancellationToken)
         {
-            if (!_pageContainer.Pages.Any()) return;
+            if (_pageContainer.PageCount <= 1) return;
             using var transitionScope = await TransitionScope.GetAsync(cancellationToken);
             await _pageContainer.PopAsync(message.PlayAnimation, cancellationToken: cancellationToken);
         }
