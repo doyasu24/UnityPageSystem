@@ -86,7 +86,7 @@ public class PageLifetimeScope : LifetimeScope
     {
         // Register PageSystem
         builder.RegisterComponentInHierarchy<PageContainer>()
-            .AsImplementedInterfaces();
+            .AsSelf().AsImplementedInterfaces();
         builder.RegisterPage();
 
         // Configure animations

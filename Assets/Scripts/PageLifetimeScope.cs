@@ -10,7 +10,8 @@ namespace PageSystem.Examples
         protected override void Configure(IContainerBuilder builder)
         {
             // Register PageSystem
-            builder.RegisterComponentInHierarchy<PageContainer>();
+            builder.RegisterComponentInHierarchy<PageContainer>()
+                .AsSelf().AsImplementedInterfaces();
             builder.RegisterPage();
 
             // Configure animations
