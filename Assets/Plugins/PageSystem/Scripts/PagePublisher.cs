@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using Cysharp.Threading.Tasks;
 using Cysharp.Threading.Tasks.Linq;
 using VContainer;
@@ -35,24 +34,22 @@ namespace PageSystem
     public class PagePublisher : IDisposable
     {
         private readonly Channel<PagePushMessage> _pushChannel;
-        private readonly ReadOnlyAsyncReactiveProperty<PagePushMessage> _pushMessage;
-        private readonly IDisposable _pushDisposable;
+        private readonly IConnectableUniTaskAsyncEnumerable<PagePushMessage> _pushMessageAsyncEnumerable;
+        private readonly IDisposable _pushConnection;
 
         /// <summary>
-        /// Gets the read-only reactive property for push messages.
+        /// Gets the async enumerable for push messages.
         /// </summary>
-        public IReadOnlyAsyncReactiveProperty<PagePushMessage> PushMessage => _pushMessage;
+        public IUniTaskAsyncEnumerable<PagePushMessage> PushMessageAsync() => _pushMessageAsyncEnumerable;
 
         private readonly Channel<PagePopMessage> _popChannel;
-        private readonly ReadOnlyAsyncReactiveProperty<PagePopMessage> _popMessage;
-        private readonly IDisposable _popDisposable;
+        private readonly IConnectableUniTaskAsyncEnumerable<PagePopMessage> _popMessageAsyncEnumerable;
+        private readonly IDisposable _popConnection;
 
         /// <summary>
-        /// Gets the read-only reactive property for pop messages.
+        /// Gets the async enumerable for pop messages.
         /// </summary>
-        public IReadOnlyAsyncReactiveProperty<PagePopMessage> PopMessage => _popMessage;
-
-        private readonly CancellationTokenSource _cts = new();
+        public IUniTaskAsyncEnumerable<PagePopMessage> PopMessageAsync() => _popMessageAsyncEnumerable;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="PagePublisher"/> class.
@@ -61,14 +58,12 @@ namespace PageSystem
         public PagePublisher()
         {
             _pushChannel = Channel.CreateSingleConsumerUnbounded<PagePushMessage>();
-            var pushConnectable = _pushChannel.Reader.ReadAllAsync().Publish();
-            _pushMessage = pushConnectable.ToReadOnlyAsyncReactiveProperty(_cts.Token);
-            _pushDisposable = pushConnectable.Connect();
+            _pushMessageAsyncEnumerable = _pushChannel.Reader.ReadAllAsync().Publish();
+            _pushConnection = _pushMessageAsyncEnumerable.Connect();
 
             _popChannel = Channel.CreateSingleConsumerUnbounded<PagePopMessage>();
-            var popConnectable = _popChannel.Reader.ReadAllAsync().Publish();
-            _popMessage = popConnectable.ToReadOnlyAsyncReactiveProperty(_cts.Token);
-            _popDisposable = popConnectable.Connect();
+            _popMessageAsyncEnumerable = _popChannel.Reader.ReadAllAsync().Publish();
+            _popConnection = _popMessageAsyncEnumerable.Connect();
         }
 
         /// <summary>
@@ -152,10 +147,8 @@ namespace PageSystem
         {
             _pushChannel.Writer.TryComplete();
             _popChannel.Writer.TryComplete();
-            _cts.Cancel();
-            _cts.Dispose();
-            _pushDisposable.Dispose();
-            _popDisposable.Dispose();
+            _pushConnection.Dispose();
+            _popConnection.Dispose();
         }
     }
 }

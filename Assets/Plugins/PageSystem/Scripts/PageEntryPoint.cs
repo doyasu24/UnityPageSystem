@@ -43,15 +43,13 @@ namespace PageSystem
 
         public void Initialize()
         {
-            _pageSubscriber.PushMessage
-                .Skip(1) // Skip the initial default value
+            _pageSubscriber.PushMessageAsync()
                 .ForEachAwaitAsync(m => PushAsync(m, _cancellationTokenSource.Token).SuppressCancellationThrow(),
                     _cancellationTokenSource.Token)
                 .SuppressCancellationThrow()
                 .Forget();
 
-            _pageSubscriber.PopMessage
-                .Skip(1) // Skip the initial default value
+            _pageSubscriber.PopMessageAsync()
                 .ForEachAwaitAsync(m => PopAsync(m, _cancellationTokenSource.Token).SuppressCancellationThrow(),
                     _cancellationTokenSource.Token)
                 .SuppressCancellationThrow()
