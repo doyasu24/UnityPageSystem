@@ -8,6 +8,11 @@ namespace PageSystem
     public interface IPageStackProvider
     {
         /// <summary>
+        /// Gets the current (topmost) page in the navigation stack, or <c>null</c> if the stack is empty.
+        /// </summary>
+        PageStackInfo? CurrentPageOrNull { get; }
+
+        /// <summary>
         /// Gets the current (topmost) page in the navigation stack.
         /// </summary>
         /// <exception cref="System.InvalidOperationException">Thrown when no pages are loaded.</exception>

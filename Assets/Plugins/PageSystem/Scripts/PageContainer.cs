@@ -36,11 +36,6 @@ namespace PageSystem
         private bool _isStackCacheDirty = true;
 
         /// <inheritdoc />
-        public PageStackInfo CurrentPage => _pageStack.Count == 0
-            ? throw new InvalidOperationException("No pages are loaded.")
-            : _pageStack[^1].ToStackInfo();
-
-        /// <inheritdoc />
         public IReadOnlyList<PageStackInfo> Stack
         {
             get
@@ -54,6 +49,15 @@ namespace PageSystem
 
         /// <inheritdoc />
         public int PageCount => _pageStack.Count;
+
+        /// <inheritdoc />
+        public PageStackInfo? CurrentPageOrNull =>
+            _pageStack.Count == 0 ? null : _pageStack[^1].ToStackInfo();
+
+        /// <inheritdoc />
+        public PageStackInfo CurrentPage => _pageStack.Count == 0
+            ? throw new InvalidOperationException("No pages are loaded.")
+            : _pageStack[^1].ToStackInfo();
 
         /// <summary>
         /// Gets all currently loaded page instances.
