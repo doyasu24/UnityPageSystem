@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using Cysharp.Threading.Tasks;
 using PageSystem.Internal;
@@ -23,20 +24,55 @@ namespace PageSystem
     /// PageContainer methods directly.
     /// </para>
     /// </remarks>
-    public sealed class PageContainer : MonoBehaviour
+    public sealed class PageContainer : MonoBehaviour, IPageHistoryProvider
     {
-        private readonly Dictionary<string, AddressableAssetLoader<GameObject>> _assetLoaders = new();
-        private readonly List<string> _orderedPageIds = new();
-        private readonly Dictionary<string, Page> _pages = new();
+        private readonly struct PageEntry : IDisposable
+        {
+            public readonly PageHistoryEntry HistoryEntry;
+            private readonly AddressableAssetLoader<GameObject> _assetLoader;
+            private readonly bool _isPreloaded;
+
+            public PageEntry(PageHistoryEntry historyEntry, AddressableAssetLoader<GameObject> assetLoader,
+                bool isPreloaded)
+            {
+                HistoryEntry = historyEntry;
+                _assetLoader = assetLoader;
+                _isPreloaded = isPreloaded;
+            }
+
+            public void Dispose()
+            {
+                Destroy(HistoryEntry.Page.gameObject);
+                if (!_isPreloaded)
+                    _assetLoader.Dispose();
+            }
+        }
+
+        private readonly List<PageEntry> _pages = new();
+        private readonly Dictionary<string, AddressableAssetLoader<GameObject>> _preloadedAssets = new();
         private CanvasGroup _canvasGroup;
         private CanvasGroup CanvasGroup => _canvasGroup ??= gameObject.GetOrAddComponent<CanvasGroup>();
         private bool _isInTransition;
         private bool _isActivePageStacked;
 
+        // Context用のビュー（実データは_pagesから取得）
+        private List<string> OrderedPageIds => _pages.Select(p => p.HistoryEntry.PageId).ToList();
+
+        private Dictionary<string, Page> PagesDictionary =>
+            _pages.ToDictionary(p => p.HistoryEntry.PageId, p => p.HistoryEntry.Page);
+
         /// <summary>
         /// Gets all currently loaded pages.
         /// </summary>
-        public IEnumerable<Page> Pages => _pages.Values;
+        public IEnumerable<Page> Pages => _pages.Select(p => p.HistoryEntry.Page);
+
+        /// <inheritdoc />
+        public PageHistoryEntry CurrentPage => _pages.Count == 0
+            ? throw new InvalidOperationException("No pages are loaded.")
+            : _pages[^1].HistoryEntry;
+
+        /// <inheritdoc />
+        public IReadOnlyList<PageHistoryEntry> History => _pages.Select(entry => entry.HistoryEntry).ToList();
 
         private IObjectResolver _objectResolver = null!;
 
@@ -52,17 +88,13 @@ namespace PageSystem
 
         private void OnDestroy()
         {
-            foreach (var pageId in _orderedPageIds)
-            {
-                var page = _pages[pageId];
-                var loader = _assetLoaders[pageId];
-                Destroy(page.gameObject);
-                loader.Dispose();
-            }
-
-            _assetLoaders.Clear();
+            foreach (var entry in _pages)
+                entry.Dispose();
             _pages.Clear();
-            _orderedPageIds.Clear();
+
+            foreach (var loader in _preloadedAssets.Values)
+                loader.Dispose();
+            _preloadedAssets.Clear();
         }
 
         /// <summary>
@@ -75,16 +107,15 @@ namespace PageSystem
         public async UniTask PopAsync(bool playAnimation, string destinationPageId)
         {
             var popCount = 0;
-            for (var i = _orderedPageIds.Count - 1; i >= 0; i--)
+            for (var i = _pages.Count - 1; i >= 0; i--)
             {
-                var pageId = _orderedPageIds[i];
-                if (pageId == destinationPageId)
+                var page = _pages[i];
+                if (page.HistoryEntry.PageId == destinationPageId)
                     break;
-
                 popCount++;
             }
 
-            if (popCount == _orderedPageIds.Count)
+            if (popCount == _pages.Count)
                 throw new Exception($"The page with id '{destinationPageId}' is not found.");
 
             await PopAsync(playAnimation, popCount);
@@ -116,38 +147,28 @@ namespace PageSystem
 
             pageId ??= Guid.NewGuid().ToString();
 
-            var (page, loader) = await LoadPageAsync<TPage>(resourceKey, cancellationToken);
-            _assetLoaders.Add(pageId, loader);
+            var (page, entry) = await LoadPageAsync<TPage>(resourceKey, pageId, cancellationToken);
 
-            var context = PagePushContext.Create(pageId, page, _orderedPageIds, _pages, _isActivePageStacked);
+            var context = PagePushContext.Create(pageId, page, OrderedPageIds, PagesDictionary, _isActivePageStacked);
             await context.PushAsync(playAnimation, (RectTransform)transform, cancellationToken);
 
+            PageEntry? removedEntry = null;
             if (context.ShouldRemoveExitPage)
             {
                 context.ExitPage.gameObject.SetActive(false);
-                _pages.Remove(context.ExitPageId);
-                _orderedPageIds.Remove(context.ExitPageId);
+                removedEntry = _pages[^1];
+                _pages.RemoveAt(_pages.Count - 1);
             }
 
-            _pages.Add(context.EnterPageId, context.EnterPage);
-            _orderedPageIds.Add(context.EnterPageId);
+            _pages.Add(entry);
             _isActivePageStacked = stack;
 
             _isInTransition = false;
             CanvasGroup.interactable = true;
 
-            AfterPush(context);
+            removedEntry?.Dispose();
 
             return (pageId, page);
-        }
-
-        private void AfterPush(PagePushContext context)
-        {
-            if (!context.ShouldRemoveExitPage) return;
-            Destroy(context.ExitPage.gameObject);
-            var loader = _assetLoaders[context.ExitPageId];
-            loader.Dispose();
-            _assetLoaders.Remove(context.ExitPageId);
         }
 
         /// <summary>
@@ -169,15 +190,16 @@ namespace PageSystem
             _isInTransition = true;
             CanvasGroup.interactable = false;
 
-            var context = PagePopContext.Create(_orderedPageIds, _pages, popCount);
+            var context = PagePopContext.Create(OrderedPageIds, PagesDictionary, popCount);
             await context.PopAsync(playAnimation, cancellationToken);
-            for (var i = 0; i < context.ExitPageIds.Count; i++)
+
+            var removedEntries = new List<PageEntry>(popCount);
+            for (var i = 0; i < popCount; i++)
             {
-                var exitPage = context.ExitPages[i];
-                var exitPageId = context.ExitPageIds[i];
-                exitPage.gameObject.SetActive(false);
-                _pages.Remove(exitPageId);
-                _orderedPageIds.RemoveAt(_orderedPageIds.Count - 1);
+                var entry = _pages[^1];
+                entry.HistoryEntry.Page.gameObject.SetActive(false);
+                removedEntries.Add(entry);
+                _pages.RemoveAt(_pages.Count - 1);
             }
 
             _isActivePageStacked = true;
@@ -185,20 +207,8 @@ namespace PageSystem
             _isInTransition = false;
             CanvasGroup.interactable = true;
 
-            AfterPop(context);
-        }
-
-        private void AfterPop(PagePopContext context)
-        {
-            for (var i = 0; i < context.ExitPageIds.Count; i++)
-            {
-                var unusedPageId = context.ExitPageIds[i];
-                var unusedPage = context.ExitPages[i];
-                Destroy(unusedPage.gameObject);
-                var loader = _assetLoaders[unusedPageId];
-                loader.Dispose();
-                _assetLoaders.Remove(unusedPageId);
-            }
+            foreach (var entry in removedEntries)
+                entry.Dispose();
         }
 
         /// <summary>
@@ -211,25 +221,31 @@ namespace PageSystem
         /// <exception cref="InvalidOperationException">Thrown when the resource has already been preloaded.</exception>
         public async UniTask PreloadAsync(string resourceKey, CancellationToken cancellationToken = default)
         {
-            if (_assetLoaders.ContainsKey(resourceKey))
+            if (_preloadedAssets.ContainsKey(resourceKey))
                 throw new InvalidOperationException(
-                    $"The resource with key \"${resourceKey}\" has already been preloaded.");
+                    $"The resource with key \"{resourceKey}\" has already been preloaded.");
 
             var loader = new AddressableAssetLoader<GameObject>(resourceKey);
-            _assetLoaders.Add(resourceKey, loader);
             await loader.LoadAssetAsync(cancellationToken);
+            _preloadedAssets.Add(resourceKey, loader);
         }
 
-        private async UniTask<(TPage, AddressableAssetLoader<GameObject>)> LoadPageAsync<TPage>(
-            string resourceKey, CancellationToken cancellationToken)
+        private async UniTask<(TPage page, PageEntry entry)> LoadPageAsync<TPage>(
+            string resourceKey, string pageId, CancellationToken cancellationToken)
             where TPage : Page
         {
-            var loader = new AddressableAssetLoader<GameObject>(resourceKey);
+            var isPreloaded = _preloadedAssets.TryGetValue(resourceKey, out var loader);
+            if (!isPreloaded)
+                loader = new AddressableAssetLoader<GameObject>(resourceKey);
+
             var prefab = await loader.LoadAssetAndGetAsync(cancellationToken);
             var instance = _objectResolver.Instantiate(prefab, transform);
             if (!instance.TryGetComponent<TPage>(out var page))
                 page = instance.AddComponent<TPage>();
-            return (page, loader);
+
+            var historyEntry = new PageHistoryEntry(resourceKey, pageId, page);
+            var entry = new PageEntry(historyEntry, loader, isPreloaded);
+            return (page, entry);
         }
     }
 }
